@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 
 function g-module() {
     echo -e "Running \e[34m./gradlew \e[32m-p $1 \e[35minstall\e[0m"

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 
 function g-clean() {
     echo -e "Running \e[34m./gradlew \e[32m--rerun-tasks clean build\e[0m"

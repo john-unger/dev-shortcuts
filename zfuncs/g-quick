@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 
-function g-quick() {
-    echo -e "Running \e[34m./gradlew \e[32m-x checkstyleMain -x checkstyleTest -x test \e[35m--offline -s\e[0m"
-    ./gradlew -x checkstyleMain -x checkstyleTest -x test --offline -s
+function g-quick () {
+    echo -e "Running \e[34m./gradlew \e[32m--parallel --configure-on-demand -x checkstyleMain -x checkstyleTest -x test \e[35m--offline -s\e[0m"
+    ./gradlew --parallel --configure-on-demand -x checkstyleMain -x checkstyleTest -x test --offline -s
 }
