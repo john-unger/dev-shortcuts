@@ -1,0 +1,16 @@
+#!/usr/bin/env zsh
+
+function ops-k9s() {
+    current_dir=$(basename "$PWD")
+
+    echo -e "To be used within ops/tenants/. Running gyro k9s to tenant: \e[34m $current_dir \e[0m"
+
+    if [[ -z "$current_dir" ]]; then
+        echo "Error: could not get the environment name from current location"
+        return 1
+    fi
+
+    gyro k9s -n $current_dir
+}
+
+
