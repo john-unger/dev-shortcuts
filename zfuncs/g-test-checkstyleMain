@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+function g-test-checkstyleMain() {
+    echo -e "Running \e[34m./gradlew \e[32m:$1:checkstyleMain \e[0m"
+    ./gradlew :$1:checkstyleMain
+}
