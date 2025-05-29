@@ -57,6 +57,7 @@ Steps to CopyDown (easy to copy & paste):
 Java Helper
 
 
+
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -85,6 +86,33 @@ class Scratch {
             DefaultTaskHostSetting taskSetting = global.as(DefaultTaskHostSetting.class);
             taskSetting.setDefaultTaskHost(taskHostName);
             returnList.add("updated default task host: " + taskHostName);
+
+            if (classExists("com.psddev.translation.aws.AwsTranslationGlobalSettings")) {
+                com.psddev.translation.aws.AwsTranslationGlobalSettings translationSettings =
+                        global.as(com.psddev.translation.aws.AwsTranslationGlobalSettings.class);
+                if (translationSettings != null) {
+                    translationSettings.setTaskHost(taskHostName);
+                    returnList.add("updated task host for AwsTranslationGlobalSettings: " + taskHostName);
+                } else {
+                    returnList.add("AwsTranslationGlobalSettings not found");
+                }
+            } else {
+                returnList.add("AwsTranslationGlobalSettings class does not exist");
+            }
+
+            if (classExists("com.psddev.analytics.PageViewsCmsToolModification")) {
+                com.psddev.analytics.PageViewsCmsToolModification pageViewsSettings =
+                        global.as(com.psddev.analytics.PageViewsCmsToolModification.class);
+                if (pageViewsSettings != null) {
+                    pageViewsSettings.setTaskHost(taskHostName);
+                    returnList.add("updated task host for PageViewsCmsToolModification: " + taskHostName);
+                } else {
+                    returnList.add("PageViewsCmsToolModification not found");
+                }
+            } else {
+                returnList.add("PageViewsCmsToolModification class does not exist");
+            }
+
             global.setEnvironment(environment);
             global.saveImmediately();
 
@@ -119,6 +147,15 @@ class Scratch {
         return returnList;
     }
 
+    private static boolean classExists(String className) {
+        try {
+            Class.forName(className, false, ClassLoader.getSystemClassLoader());
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
     /**
      * This method updates the site URL by replacing the main part of the host.
      * <p>
@@ -142,8 +179,8 @@ class Scratch {
         String newBaseHost = newBase.getHost();     // e.g., "cter-qa2.lower.k1.amazon.brightspot.cloud"
 
         // Split both hosts into their parts
-        String[] originalParts = originalHost.split("\\.");
-        String[] newBaseParts = newBaseHost.split("\\.");
+        String[] originalParts = originalHost.split("\\\\.");
+        String[] newBaseParts = newBaseHost.split("\\\\.");
 
         // Ensure the original host has at least as many parts as the new base host.
         // The extra parts at the beginning (if any) are preserved.
@@ -194,6 +231,8 @@ class Scratch {
         originalSite.setUrls(newUrls);
     }
 }
+
+
 
 
 EOF
