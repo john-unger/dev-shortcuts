@@ -149,7 +149,7 @@ class Scratch {
 
     private static boolean classExists(String className) {
         try {
-            Class.forName(className, false, ClassLoader.getSystemClassLoader());
+            Class.forName(className);
             return true;
         } catch (ClassNotFoundException e) {
             return false;
