@@ -1,156 +1,226 @@
-import os
+#!/usr/bin/env python3
+"""
+Update macOS, App Store, and Homebrew in a maintainable, parallelizable way.
+Gracefully handles user cancellation (Ctrl+C) and logs a friendly message.
+"""
+import argparse
+import logging
 import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
+from typing import Callable, List
 
-def echo_color_log(color, message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_message = f"[{timestamp}]: {message}\n"
+import colorama
+from colorama import Fore
 
-    with open(LOGFILE, "a") as log_file:
-        log_file.write(log_message)
+# Constants
+DEFAULT_LOGFILE = Path.home() / "updatemac_log.txt"
 
-    if color:
-        print(f"\033[{color}m{message}\033[0m")
-    else:
-        print(message)
 
-def check_internet_connectivity():
+class UpdateTask:
+    """
+    Represents an update task with a check and update command.
+    """
+    def __init__(self, name: str, check_cmd: List[str],
+                 update_cmd: List[str],
+                 check_fn: Callable[[subprocess.CompletedProcess], bool]):
+        self.name = name
+        self.check_cmd = check_cmd
+        self.update_cmd = update_cmd
+        self.check_fn = check_fn
+        self.pending = False
+
+    def run_command(self, cmd: List[str]) -> subprocess.CompletedProcess:
+        """
+        Executes a command and returns the CompletedProcess.
+        """
+        logging.debug(f"Running command: {' '.join(cmd)}")
+        try:
+            cp = subprocess.run(cmd, capture_output=True, text=True)
+            logging.debug(f"{cmd} stdout: {cp.stdout.strip()}")
+            logging.debug(f"{cmd} stderr: {cp.stderr.strip()}")
+            return cp
+        except Exception as e:
+            logging.exception(f"Error running command {' '.join(cmd)}: {e}")
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr=str(e))
+
+    def check(self) -> bool:
+        """
+        Checks if updates are pending.
+        """
+        logging.info(f"Checking for {self.name} updates...")
+        result = self.run_command(self.check_cmd)
+        self.pending = self.check_fn(result)
+        if self.pending:
+            logging.warning(f"{self.name} updates are pending")
+        else:
+            logging.info(f"No {self.name} updates available")
+        return self.pending
+
+    def update(self) -> bool:
+        """
+        Performs the update if pending.
+        """
+        logging.info(f"Updating {self.name}...")
+        try:
+            result = self.run_command(self.update_cmd)
+        except KeyboardInterrupt:
+            logging.warning(Fore.RED + f"{self.name} update cancelled by user.")
+            return False
+        if result.returncode == 0:
+            logging.info(f"{self.name} update completed successfully")
+            return True
+        else:
+            logging.error(f"{self.name} update failed: {result.stderr.strip()}")
+            return False
+
+
+def check_internet() -> bool:
+    """
+    Verifies internet connectivity by pinging a reliable server.
+    """
     try:
-        subprocess.check_call(["ping", "-c", "1", "8.8.8.8"])
+        subprocess.check_call(
+            ["ping", "-c", "1", "8.8.8.8"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         return True
     except subprocess.CalledProcessError:
         return False
 
-def check_for_macos_updates():
-    echo_color_log("1;34", "\nChecking for macOS updates...")
-    result = subprocess.run(["softwareupdate", "-l"], capture_output=True, text=True)
-    if "No new software available" in result.stdout:
-        echo_color_log("1;32", "macOS is up to date.")
-    else:
-        echo_color_log("1;33", "macOS update is available.")
-        return True
-    return False
 
-def check_for_app_store_updates():
-    echo_color_log("1;34", "\nChecking for App Store updates...")
-    result = subprocess.run(["mas", "outdated"], capture_output=True, text=True)
-    if any(line.startswith("[0-9]") for line in result.stdout.splitlines()):
-        echo_color_log("1;33", "App Store updates are available.")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Update macOS, App Store, and Homebrew with graceful cancellation"
+    )
+    parser.add_argument(
+        "--no-interaction",
+        action="store_true",
+        help="Run non-interactively (assume 'yes' to prompts)"
+    )
+    parser.add_argument(
+        "--logfile",
+        type=Path,
+        default=DEFAULT_LOGFILE,
+        help="Path to the update log file"
+    )
+    return parser.parse_args()
+
+
+def setup_logging(logfile: Path) -> None:
+    """
+    Configures logging to file and console with timestamps.
+    """
+    logfile.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        handlers=[
+            logging.FileHandler(logfile, mode="w"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    colorama.init(autoreset=True)
+    logging.info(f"Log initialized at {logfile}")
+
+
+def prompt_user(message: str, default: bool = False) -> bool:
+    """
+    Prompts the user for a yes/no answer.
+    """
+    if default:
         return True
-    else:
-        echo_color_log("1;32", "App Store apps are up to date.")
+    try:
+        answer = input(f"{message} [y/N]: ").strip().lower()
+        return answer in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        logging.warning(Fore.RED + "User input cancelled.")
         return False
 
-def check_for_homebrew_updates():
-    echo_color_log("1;34", "\nChecking for Homebrew updates...")
-    result = subprocess.run(["brew", "update", "--auto-update"], capture_output=True, text=True)
-    echo_color_log("", result.stdout)
-    if "Auto-updated Homebrew" in result.stdout:
-        echo_color_log("1;33", "Homebrew is updated.")
-    else:
-        echo_color_log("1;33", "Homebrew updates are available.")
-        return True
-    return False
 
-def check_for_outdated_casks_and_packages():
-    echo_color_log("1;34", "\nChecking for outdated casks and packages...")
-    result = subprocess.run(["brew", "outdated", "--verbose"], capture_output=True, text=True)
-    if result.stdout:
-        echo_color_log("1;33", "Outdated casks and packages found:")
-        echo_color_log("", result.stdout)
-        return True
-    else:
-        echo_color_log("1;32", "No outdated casks or packages found.")
-        return False
+def main() -> None:
+    args = parse_args()
+    setup_logging(args.logfile)
 
-def main():
-    global LOGFILE
-    LOGFILE = os.path.expanduser("~/updatemac_log.txt")
+    try:
+        # Internet check
+        if not check_internet():
+            logging.error(Fore.RED + "No internet connection. Aborting.")
+            sys.exit(1)
+        logging.info(Fore.GREEN + "Internet connection detected.")
 
-    macos_update_pending = False
-    app_store_update_pending = False
-    homebrew_update_pending = False
-    casks_update_pending = False
+        # Define tasks
+        tasks = [
+            UpdateTask(
+                name="macOS",
+                check_cmd=["softwareupdate", "-l"],
+                update_cmd=["softwareupdate", "-ia"],
+                check_fn=lambda cp: "No new software available" not in cp.stdout
+            ),
+            UpdateTask(
+                name="App Store (mas)",
+                check_cmd=["mas", "outdated"],
+                update_cmd=["mas", "upgrade"],
+                check_fn=lambda cp: bool(cp.stdout.strip())
+            ),
+            UpdateTask(
+                name="Homebrew (brew update)",
+                check_cmd=["brew", "update", "--auto-update"],
+                update_cmd=["brew", "update"],
+                check_fn=lambda cp: "Auto-updated Homebrew" not in cp.stdout
+            ),
+            UpdateTask(
+                name="Homebrew packages",
+                check_cmd=["brew", "outdated", "--verbose"],
+                update_cmd=["brew", "upgrade", "--greedy"],
+                check_fn=lambda cp: bool(cp.stdout.strip())
+            )
+        ]
 
-    # Overwrite the log file if it exists
-    with open(LOGFILE, "w") as log_file:
-        log_file.write(f"Updating log on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        # Parallel checks
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            check_futures = {executor.submit(task.check): task for task in tasks}
+            pending_tasks = []
+            for future in as_completed(check_futures):
+                task = check_futures[future]
+                try:
+                    if future.result():
+                        pending_tasks.append(task)
+                except KeyboardInterrupt:
+                    logging.warning(Fore.RED + "Update check cancelled by user.")
+                    sys.exit(1)
 
-    # Check internet connectivity
-    if not check_internet_connectivity():
-        echo_color_log("1;31", "Error: No internet connection. Aborting updates.")
-        return
-
-    echo_color_log("1;34", "Internet connection detected.")
-
-    # Check for macOS updates
-    if check_for_macos_updates():
-        macos_update_pending = True
-
-    # Check for App Store updates
-    if check_for_app_store_updates():
-        app_store_update_pending = True
-
-    # Check for Homebrew updates
-    if check_for_homebrew_updates():
-        homebrew_update_pending = True
-
-    # Check for outdated casks and packages
-    if check_for_outdated_casks_and_packages():
-        casks_update_pending = True
-
-    # Ask for confirmation before proceeding with updates
-    if macos_update_pending or app_store_update_pending or homebrew_update_pending or casks_update_pending:
-        response = input("\nDo you want to proceed with updates? (y/n): ").strip().lower()
-
-        if response not in ["y", "yes"]:
-            echo_color_log("1;31", "Updates aborted by user.")
+        if not pending_tasks:
+            logging.info(Fore.GREEN + "All systems are up to date. Exiting.")
             return
-    else:
-        echo_color_log("1;32", "No updates pending. Exiting.")
-        return
 
-    # Perform updates if updates are pending
-    if macos_update_pending:
-        # Perform macOS update
-        echo_color_log("1;34", "Updating macOS...")
-        result = subprocess.run(["softwareupdate", "-ia"], capture_output=True, text=True)
-        if result.returncode == 0:
-            echo_color_log("1;32", "macOS update complete.")
-        else:
-            echo_color_log("1;31", "macOS update failed.")
+        # Confirm updates
+        if not args.no_interaction and not prompt_user("Proceed with updates?"):
+            logging.warning(Fore.RED + "Updates aborted by user.")
+            return
 
-    if app_store_update_pending:
-        # Perform App Store update
-        echo_color_log("1;34", "Updating App Store apps...")
-        result = subprocess.run(["mas", "upgrade"], capture_output=True, text=True)
-        if result.returncode == 0:
-            echo_color_log("1;32", "App Store update complete.")
-        else:
-            echo_color_log("1;31", "App Store update failed.")
+        # Parallel updates
+        with ThreadPoolExecutor(max_workers=len(pending_tasks)) as executor:
+            update_futures = {executor.submit(task.update): task for task in pending_tasks}
+            for future in as_completed(update_futures):
+                task = update_futures[future]
+                try:
+                    success = future.result()
+                    if not success:
+                        logging.error(Fore.RED + f"{task.name} update encountered errors.")
+                except KeyboardInterrupt:
+                    logging.warning(Fore.RED + "Update process cancelled by user.")
+                    sys.exit(1)
 
-    if homebrew_update_pending:
-        # Perform Homebrew update
-        echo_color_log("1;34", "Updating Homebrew...")
-        result = subprocess.run(["brew", "update"], capture_output=True, text=True)
-        if result.returncode == 0:
-            echo_color_log("1;32", "Homebrew update complete.")
-        else:
-            echo_color_log("1;31", "Homebrew update failed.")
+        logging.info(Fore.CYAN + f"Update process completed. See log at {args.logfile}")
 
-    if casks_update_pending:
-        # Upgrade outdated casks if any
-        echo_color_log("1;34", "Upgrading outdated casks and packages...")
-        result = subprocess.run(["brew", "update-all"], capture_output=True, text=True)
-        if result.returncode == 0:
-            echo_color_log("1;32", "Cask and package upgrade complete.")
-        else:
-            echo_color_log("1;31", "Cask and package upgrade failed.")
+    except KeyboardInterrupt:
+        logging.warning(Fore.RED + "Operation cancelled by user (Ctrl+C). Exiting gracefully.")
+        sys.exit(1)
 
-
-    # Print the log file location and instructions
-    echo_color_log("1;34", "\nTo view the log, run the following command:")
-    echo_color_log("1;34", f"bat {LOGFILE}")
 
 if __name__ == "__main__":
     main()
