@@ -71,15 +71,16 @@ import brightspot.task.DefaultTaskHostSetting;
 import com.psddev.cms.db.Site;
 import com.psddev.cms.tool.CmsTool;
 import com.psddev.dari.db.Query;
+import com.psddev.dari.db.Record;
 import com.psddev.dari.db.Singleton;
 
 class Scratch {
     public static Object main() throws Throwable {
         List<String> returnList = new ArrayList<>();
         returnList.add(String.valueOf(new Date()));
-        String taskHostName = "brightspot-task.ship-uat.svc.cluster.local";
-        String environment = "UAT";
-        String newUrlBase = "https://ship-uat.lower.shipping-freight.brightspot.cloud";
+        String taskHostName = "brightspot-task.cter-qa2.svc.cluster.local";
+        String environment = "QA";
+        String newUrlBase = "https://cter-qa2.lower.k1.amazon.brightspot.cloud";
 
         CmsTool global = Singleton.getInstance(CmsTool.class);
         if (global != null) {
@@ -87,31 +88,11 @@ class Scratch {
             taskSetting.setDefaultTaskHost(taskHostName);
             returnList.add("updated default task host: " + taskHostName);
 
-            if (classExists("com.psddev.translation.aws.AwsTranslationGlobalSettings")) {
-                com.psddev.translation.aws.AwsTranslationGlobalSettings translationSettings =
-                        global.as(com.psddev.translation.aws.AwsTranslationGlobalSettings.class);
-                if (translationSettings != null) {
-                    translationSettings.setTaskHost(taskHostName);
-                    returnList.add("updated task host for AwsTranslationGlobalSettings: " + taskHostName);
-                } else {
-                    returnList.add("AwsTranslationGlobalSettings not found");
-                }
-            } else {
-                returnList.add("AwsTranslationGlobalSettings class does not exist");
-            }
-
-            if (classExists("com.psddev.analytics.PageViewsCmsToolModification")) {
-                com.psddev.analytics.PageViewsCmsToolModification pageViewsSettings =
-                        global.as(com.psddev.analytics.PageViewsCmsToolModification.class);
-                if (pageViewsSettings != null) {
-                    pageViewsSettings.setTaskHost(taskHostName);
-                    returnList.add("updated task host for PageViewsCmsToolModification: " + taskHostName);
-                } else {
-                    returnList.add("PageViewsCmsToolModification not found");
-                }
-            } else {
-                returnList.add("PageViewsCmsToolModification class does not exist");
-            }
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.translation.aws.AwsTranslationGlobalSettings", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.analytics.PageViewsCmsToolModification", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.adobe.analytics.AdobeAnalyticsProcessTaskSettings", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.google.GoogleCmsToolModification", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.calendar.external.ExternalCalendarSyncTaskGlobalSettings", "setTaskHost"));
 
             global.setEnvironment(environment);
             global.saveImmediately();
@@ -147,12 +128,29 @@ class Scratch {
         return returnList;
     }
 
-    private static boolean classExists(String className) {
+    public static boolean classExists(String className) {
         try {
             Class.forName(className);
             return true;
         } catch (ClassNotFoundException e) {
             return false;
+        }
+    }
+
+    public static String changeTaskHostIfClassExists(Record siteSetting, String taskHostName, String className, String setterMethodName) {
+        if (siteSetting == null) {
+            return "SiteSetting is null";
+        }
+        if (classExists(className)) {
+            try {
+                Object settings = siteSetting.as(Class.forName(className));
+                settings.getClass().getMethod(setterMethodName, String.class).invoke(settings, taskHostName);
+                return "Updated task host for " + className + ": " + taskHostName;
+            } catch (Exception e) {
+                return "Failed to update task host for " + className + ": " + e.getMessage();
+            }
+        } else {
+            return className + " not found";
         }
     }
 
@@ -231,6 +229,9 @@ class Scratch {
         originalSite.setUrls(newUrls);
     }
 }
+
+
+
 
 
 
