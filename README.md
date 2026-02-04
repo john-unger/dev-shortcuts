@@ -11,6 +11,3 @@ Add these lines to your `.zshrc`:
 fpath=(~/[path-to-repo]/zfuncs $fpath);
 autoload -U $fpath[1]/*(.:t)
 ```
-
-## ⚡ Nice to have
-You can put this repo in a hidden folder
