@@ -6,7 +6,5 @@
 
 function updatemac() {
 
-  local FILELOCATION=`dirname ${(%):-%x}`
-  local PYTHON_SCRIPT="$FILELOCATION/_updatemac.py"
-  python3 "${PYTHON_SCRIPT}"
+    "$DEV_SHORTCUTS_ROOT/.venv/bin/python" "$DEV_SHORTCUTS_ROOT/zfuncs/_updatemac.py"
 }
