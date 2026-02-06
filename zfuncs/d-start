@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function d-start() {
   docker compose start $1

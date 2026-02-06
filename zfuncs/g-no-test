@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function g-no-test() {
     echo -e "Running \e[34m./gradlew \e[32m-x test\e[0m"

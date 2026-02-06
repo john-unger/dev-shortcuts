@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function d-up() {
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function touch-mkdir() {
     # If no arguments are given, print usage.

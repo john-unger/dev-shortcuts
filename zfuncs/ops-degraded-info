@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function ops-degraded-info() {
     tenant="$1" # Tenant provided as the first argument
