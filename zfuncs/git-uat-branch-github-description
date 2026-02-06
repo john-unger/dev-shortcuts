@@ -2,7 +2,7 @@
 
 function git-uat-branch-github-description() {
 
-    local SCRIPTFILE="$HOME/Documents/dev-shortcuts/zfuncs/_generate_ticket_links.py"
+    local SCRIPTFILE="$DEV_SHORTCUTS_ROOT/zfuncs/_generate_ticket_links.py"
 
     echo -e "Running script to create description..."
     python3 "$SCRIPTFILE"

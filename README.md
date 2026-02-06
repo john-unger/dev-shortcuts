@@ -10,7 +10,9 @@ Add these lines to your `.zshrc`:
 ```
 
 # add zfuncs to fpath, and then lazy autoload
-ZFUNCS_DIR="$HOME/Documents/dev-shortcuts/zfuncs"
+export DEV_SHORTCUTS_ROOT="$HOME/Documents/dev-shortcuts"
+
+ZFUNCS_DIR="$DEV_SHORTCUTS_ROOT/zfuncs"
 fpath=("$ZFUNCS_DIR" $fpath)
 
 zfuncs-init() {
