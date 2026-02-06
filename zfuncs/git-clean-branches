@@ -1,17 +1,97 @@
-#!/usr/bin/env bash
+#autoload
+# zfuncs autoloaded function: git-clean-branches
 
 function git-clean-branches() {
-	echo -e "Cleaning out merged branches... Using \e[34mgit branch \e[31m-d\e[0m"
-	TMPBR=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
-	git stash && git checkout $TMPBR && git pull --verbose
+  emulate -L zsh
+  setopt extendedglob no_nomatch
 
-	git branch --merged | egrep -v "(^\*|master|main|dev)" | xargs git branch -d
-	echo -e "\n\n\e[34mRemaining git branches:\e[0m"
-	git branch
-	echo -e "\n\n\e[34mPulling all local branches...\e[0m"
-	for brname in `git for-each-ref --format='%(refname:short)' refs/heads/ | egrep -v "(^\*|master|main|dev)"`
-	do
-		echo -e "git fetch \e[32m$brname\e[0m"
-    	git fetch origin $brname:$brname --verbose
-	done
+  echo -e "Cleaning out merged branches... Using \e[34mgit branch \e[31m-d\e[0m"
+
+  # Must be in a git repo
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Not inside a git repository." >&2
+    return 1
+  fi
+
+  # Determine default branch from origin/HEAD (main/master/develop/etc)
+  local TMPBR
+  TMPBR="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
+  if [[ -z "$TMPBR" ]]; then
+    echo "Could not determine origin/HEAD. Is 'origin' set and fetched?" >&2
+    return 1
+  fi
+
+  # Protect common branches + whatever origin/HEAD points to
+  local PROTECT_RE
+  PROTECT_RE="^(master|main|dev|develop|${TMPBR})$"
+
+  # Stash only if there are changes (including untracked)
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo -e "\nStashing local changes (including untracked)..."
+    git stash push -u -m "git-clean-branches auto-stash"
+  else
+    echo -e "\nNo local changes to stash."
+  fi
+
+  echo -e "\nUpdating default branch: \e[32m$TMPBR\e[0m"
+  # Prune first so "remote gone" checks are accurate
+  git fetch --prune origin
+
+  # Checkout default branch safely (create local tracking if missing)
+  if git show-ref --verify --quiet "refs/heads/$TMPBR"; then
+    git checkout "$TMPBR"
+  else
+    git checkout -b "$TMPBR" "origin/$TMPBR"
+  fi
+
+  # Update it without making merges
+  git pull --ff-only --verbose
+
+  echo -e "\n\e[34mDeleting ancestry-merged local branches (safe -d)...\e[0m"
+  local br merged_list
+  merged_list=("${(@f)$(git branch --merged | sed 's/^\* //; s/^[[:space:]]*//')}")
+
+  for br in $merged_list; do
+    [[ -z "$br" ]] && continue
+    [[ "$br" =~ $PROTECT_RE ]] && continue
+
+    echo -e "git branch -d \e[31m$br\e[0m"
+    git branch -d "$br"
+  done
+
+  echo -e "\n\e[34mDeleting remote-gone branches only if patch is already applied (squash/rebase) ...\e[0m"
+  local local_branches
+  local_branches=("${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/)}")
+
+  for br in $local_branches; do
+    [[ -z "$br" ]] && continue
+    [[ "$br" =~ $PROTECT_RE ]] && continue
+
+    # If remote ref doesn't exist anymore...
+    if ! git show-ref --verify --quiet "refs/remotes/origin/$br"; then
+      # ...and the patch is already applied to TMPBR, delete locally.
+      if git cherry -v "$TMPBR" "$br" | grep -q '^- '; then
+        echo -e "Deleting (applied + remote gone): \e[31m$br\e[0m"
+        git branch -D "$br"
+      else
+        echo -e "Keeping (remote gone, NOT applied to $TMPBR): \e[33m$br\e[0m"
+      fi
+    fi
+  done
+
+  echo -e "\n\n\e[34mRemaining git branches:\e[0m"
+  git branch
+
+  echo -e "\n\n\e[34mFetching updates for local branches that still exist on origin...\e[0m"
+  for br in $local_branches; do
+    [[ -z "$br" ]] && continue
+    [[ "$br" =~ $PROTECT_RE ]] && continue
+
+    if git show-ref --verify --quiet "refs/remotes/origin/$br"; then
+      echo -e "git fetch \e[32m$br\e[0m"
+      git fetch origin "$br:$br" --verbose
+    else
+      echo -e "Skipping fetch (no remote ref): \e[33m$br\e[0m"
+    fi
+  done
 }
