@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function wait-url-health() {
     url="$1" # URL provided as the first argument

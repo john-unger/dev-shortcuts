@@ -1,12 +1,12 @@
-#!/usr/bin/env zsh
+#autoload
 
 function helm-apply-config() {
 
-	if [ -e "helm/helmfile.yaml" ]; then
-    	echo -e "Running \e[34mhelmfile \e[32m-f helm/helmfile.yaml -i apply\e[0m"
-    	helmfile -f helm/helmfile.yaml -i apply
-	else
-    	echo -e "\"\e[32mhelm/helmfile.yaml\e[0m\" does \"\e[32mnot exist\e[0m\"\nnothing is done..."
+	if [ -e "helm/images.yaml" ]; then
+    	echo "moving to helm dir..."
+    	cd helm
 	fi
+	echo -e "Running \e[34mhelmfile \e[32m-i apply\e[0m"
+   	helmfile -i apply --context=3
 
 }

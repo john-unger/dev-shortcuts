@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function g-quick-core() {
     echo -e "Running \e[34m./gradlew \e[32m-x checkstyleMain -x checkstyleTest -x test -p core \e[35m--offline -s\e[0m"

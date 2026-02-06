@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function _d_colorize() {
     if [[ $1 == "tomcat" ]]

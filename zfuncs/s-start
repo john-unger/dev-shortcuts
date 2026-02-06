@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function s-start() {
   echo -e "Running \e[34myarn server:styleguide\e[0m"
