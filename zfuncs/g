@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function g() {
     echo -e "Running \e[34m./gradlew\e[0m"

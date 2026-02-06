@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 # Describes the entire dependency tree for the core module. This can be done for any project module.
 

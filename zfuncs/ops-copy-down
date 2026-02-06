@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function ops-copy-down() {
       # Get the tenant passed as the first argument

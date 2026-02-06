@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function d-bash() {
   docker compose exec $1 bash --login;

@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function ops-k9s() {
     current_dir=$(basename "$PWD")

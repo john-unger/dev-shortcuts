@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function g-clean-install() {
     echo -e "Running \e[34m./gradlew \e[32m--rerun-tasks clean build install\e[0m"

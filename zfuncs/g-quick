@@ -1,4 +1,4 @@
-#!/bin/zsh
+#autoload
 
 function g-quick () {
     echo -e "Running \e[34m./gradlew \e[32m--parallel -x checkstyleMain -x checkstyleTest -x test \e[35m--offline -s\e[0m"
