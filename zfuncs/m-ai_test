@@ -1,0 +1,4 @@
+#autoload
+
+print -P -- "Running %F{green}./bin/run_ai_search_test.bash%f"
+_m_run_repo_script "bin/run_ai_search_test.bash" "$@"

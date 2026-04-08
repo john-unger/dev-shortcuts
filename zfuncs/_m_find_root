@@ -1,0 +1,14 @@
+#autoload
+
+function _m_find_root() {
+    # Find repo root by walking up until we see melos.yaml
+    local dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+      if [[ -f "$dir/melos.yaml" ]]; then
+        print -r -- "$dir"
+        return 0
+      fi
+      dir="${dir:h}"
+    done
+    return 1
+}

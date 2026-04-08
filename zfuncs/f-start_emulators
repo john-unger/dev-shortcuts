@@ -1,0 +1,62 @@
+#autoload
+
+function f-start_emulators() {
+    emulate -L zsh
+    setopt localtraps
+
+    local root script firebase_pid firebase_pgid shell_pgid cleanup_done=0
+
+    root="$(_m_find_root)" || {
+        print -ru2 -- "Not inside a melos repo (melos.yaml not found)."
+        return 1
+    }
+
+    script="$root/bin/start_firebase_emulators.sh"
+    [[ -f "$script" ]] || {
+        print -ru2 -- "Script not found: $script"
+        return 1
+    }
+    [[ -x "$script" ]] || chmod +x "$script" >/dev/null 2>&1 || true
+
+    trap '
+        if (( ! cleanup_done )); then
+            cleanup_done=1
+            if [[ -n "${firebase_pid:-}" ]] && kill -0 "$firebase_pid" 2>/dev/null; then
+                print -P -- "Stopping %F{yellow}firebase emulators%f"
+
+                if [[ -n "${firebase_pgid:-}" && "$firebase_pgid" != "$shell_pgid" ]]; then
+                    kill -TERM -- "-$firebase_pgid" 2>/dev/null || true
+                fi
+                _m_kill_process_tree "$firebase_pid" TERM || true
+
+                for _ in {1..10}; do
+                    kill -0 "$firebase_pid" 2>/dev/null || break
+                    sleep 0.2
+                done
+
+                if kill -0 "$firebase_pid" 2>/dev/null; then
+                    if [[ -n "${firebase_pgid:-}" && "$firebase_pgid" != "$shell_pgid" ]]; then
+                        kill -KILL -- "-$firebase_pgid" 2>/dev/null || true
+                    fi
+                    _m_kill_process_tree "$firebase_pid" KILL || true
+                fi
+            fi
+        fi
+    ' EXIT HUP INT TERM QUIT
+
+    print -P -- "Reauth %F{green}firebase%f"
+    firebase login --reauth || return $?
+
+    print -P -- "Running %F{green}./bin/start_firebase_emulators.sh%f"
+    (
+        cd "$root" || exit 1
+        "$script" "$@"
+    ) &
+    firebase_pid=$!
+    firebase_pgid="$(ps -o pgid= -p "$firebase_pid" 2>/dev/null)"
+    firebase_pgid="${firebase_pgid//[[:space:]]/}"
+    shell_pgid="$(ps -o pgid= -p "$$" 2>/dev/null)"
+    shell_pgid="${shell_pgid//[[:space:]]/}"
+
+    wait "$firebase_pid"
+}

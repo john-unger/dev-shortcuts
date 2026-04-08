@@ -1,0 +1,4 @@
+#autoload
+
+print -P -- "Running %F{green}./bin/build_app_json_import.sh%f"
+_m_run_repo_script "bin/build_app_json_import.sh" "$@"

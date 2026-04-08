@@ -1,0 +1,61 @@
+#autoload
+
+function git-new-branch() {
+    emulate -L zsh
+    setopt errexit nounset pipefail
+
+    local original normalized branch
+
+    # macOS clipboard -> snake_case -> create git branch
+    # Prints original and converted values to stdout.
+
+    # Ensure required tools exist
+    if ! command -v pbpaste >/dev/null 2>&1; then
+      echo "Error: pbpaste not found (macOS clipboard required)."
+      return 1
+    fi
+
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "Error: not inside a git repository."
+      return 1
+    fi
+
+    # Read clipboard (preserve visible structure)
+    original="$(pbpaste)"
+
+    echo "Original clipboard string:"
+    echo "--------------------------------"
+    echo "$original"
+    echo "--------------------------------"
+
+    # Normalize newlines to spaces before transformation
+    normalized="${original//$'\n'/ }"
+
+    # Convert to lowercase snake_case
+    branch="$(
+      print -r -- "$normalized" | perl -CS -pe '
+        $_ = lc($_);
+        s/[^a-z0-9]+/_/g;
+        s/^_+//;
+        s/_+$//;
+        s/_+/_/g;
+      '
+    )"
+
+    echo
+    echo "Converted snake_case branch name:"
+    echo "--------------------------------"
+    echo "$branch"
+    echo "--------------------------------"
+    echo
+
+    if [[ -z "$branch" ]]; then
+      echo "Error: conversion resulted in empty branch name."
+      return 1
+    fi
+
+    echo "Creating git branch..."
+    git switch -c "$branch" 2>/dev/null || git checkout -b "$branch"
+
+    echo "Done."
+}

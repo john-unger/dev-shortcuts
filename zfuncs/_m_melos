@@ -1,0 +1,6 @@
+#autoload
+
+function _m_melos() {
+    local root="$(_m_find_root)" || { print -ru2 -- "Not inside a melos repo (melos.yaml not found)."; return 1; }
+    (cd "$root" && command melos "$@")
+}

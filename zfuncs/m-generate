@@ -1,0 +1,4 @@
+#autoload
+
+print -P -- "Running %F{blue}melos%F{green} run generate%f"
+_m_melos_run generate "$@"
