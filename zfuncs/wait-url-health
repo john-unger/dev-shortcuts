@@ -1,15 +1,16 @@
 #autoload
 
 function wait-url-health() {
-    url="$1" # URL provided as the first argument
-    expected_code="200"
-
-    echo -e "Waiting for this URL to return \e[34m $expected_code \e[0m code: \e[34m $url \e[0m"
+    local url="${1:-}"
+    local expected_code="200"
+    local response
 
     if [[ -z "$url" ]]; then
-        echo -e "Usage: $0 \e[34m<URL>\e[0m"
+        echo -e "Usage: wait-url-health \e[34m<URL>\e[0m"
         return 1
     fi
+
+    echo -e "Waiting for this URL to return \e[34m $expected_code \e[0m code: \e[34m $url \e[0m"
 
     while true; do
         response=$(curl -s -o /dev/null -w "%{http_code}" -L "$url")
@@ -23,5 +24,4 @@ function wait-url-health() {
     done
 
 }
-
 

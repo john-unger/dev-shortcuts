@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function d-pull() {
   docker compose pull && docker compose up --no-start --force-recreate

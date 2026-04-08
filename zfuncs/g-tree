@@ -3,6 +3,13 @@
 # Describes the entire dependency tree for the core module. This can be done for any project module.
 
 function g-tree() {
-    echo -e "Running \e[34m./gradlew \e[32m:$1:dependencies\e[0m"
-    ./gradlew :$1:dependencies ;
+    local module="${1:-}"
+
+    if [[ -z "$module" ]]; then
+        echo "Usage: g-tree <module>" >&2
+        return 1
+    fi
+
+    echo -e "Running \e[34m./gradlew \e[32m:$module:dependencies\e[0m"
+    ./gradlew ":$module:dependencies"
 }

@@ -1,6 +1,9 @@
 #autoload
 
 function d-start() {
-  docker compose start $1
+  if [[ $# -eq 0 ]]; then
+    docker compose start
+  else
+    docker compose start "$1"
+  fi
 }
-

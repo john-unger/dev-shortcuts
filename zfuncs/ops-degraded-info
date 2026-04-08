@@ -1,16 +1,17 @@
 #autoload
 
 function ops-degraded-info() {
-    tenant="$1" # Tenant provided as the first argument
-    echo -e "To be used within ops/tenants/. Describing pod of tenant: \e[34m $tenant \e[0m"
+    local tenant="${1:-}"
+    local frontend_pod
 
     if [[ -z "$tenant" ]]; then
-        echo -e "Usage: $0 \e[34m<tentant>\e[0m"
+        echo -e "Usage: ops-degraded-info \e[34m<tenant>\e[0m"
         echo "Example: \"qa\" or funds-qa"
         return 1
     fi
 
-    kubectl describe -n $tenant $(kubectl get -n $tenant pods -l app.kubernetes.io/name=frontend -o name) | grep ^Events: -A1000
+    echo -e "To be used within ops/tenants/. Describing pod of tenant: \e[34m $tenant \e[0m"
+    frontend_pod="$(kubectl get -n "$tenant" pods -l app.kubernetes.io/name=frontend -o name)"
+    kubectl describe -n "$tenant" "$frontend_pod" | grep '^Events:' -A1000
 }
-
 

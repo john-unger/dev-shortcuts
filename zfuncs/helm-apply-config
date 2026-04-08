@@ -1,12 +1,16 @@
 #autoload
 
 function helm-apply-config() {
+    local helm_dir="."
 
-	if [ -e "helm/images.yaml" ]; then
-    	echo "moving to helm dir..."
-    	cd helm
-	fi
-	echo -e "Running \e[34mhelmfile \e[32m-i apply\e[0m"
-   	helmfile -i apply --context=3
+    if [[ -e "helm/images.yaml" ]]; then
+        echo "moving to helm dir..."
+        helm_dir="helm"
+    fi
 
+    (
+        cd "$helm_dir" || exit 1
+        echo -e "Running \e[34mhelmfile \e[32m-i apply\e[0m"
+        helmfile -i apply --context=3
+    )
 }

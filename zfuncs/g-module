@@ -1,6 +1,13 @@
 #autoload
 
 function g-module() {
-    echo -e "Running \e[34m./gradlew \e[32m-p $1 \e[35minstall\e[0m"
-    ./gradlew -p $1 install;
+    local module="${1:-}"
+
+    if [[ -z "$module" ]]; then
+        echo "Usage: g-module <module>" >&2
+        return 1
+    fi
+
+    echo -e "Running \e[34m./gradlew \e[32m-p $module \e[35minstall\e[0m"
+    ./gradlew -p "$module" install
 }

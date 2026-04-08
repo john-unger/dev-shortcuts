@@ -1,5 +1,12 @@
 #autoload
 
 function d-bash() {
-  docker compose exec $1 bash --login;
+  local service="${1:-}"
+
+  if [[ -z "$service" ]]; then
+    echo "Usage: d-bash <service>" >&2
+    return 1
+  fi
+
+  docker compose exec "$service" bash --login
 }

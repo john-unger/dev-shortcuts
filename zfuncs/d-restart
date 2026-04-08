@@ -1,5 +1,9 @@
 #autoload
 
 function d-restart() {
-  docker compose restart $1
+  if [[ $# -eq 0 ]]; then
+    docker compose restart
+  else
+    docker compose restart "$1"
+  fi
 }

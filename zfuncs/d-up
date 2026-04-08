@@ -1,17 +1,17 @@
 #autoload
 
 function d-up() {
+  emulate -L zsh
 
-  # Start the containers
-  docker compose up -d
+  local compose_output response
+  local -a running_names
 
-  # Check the exit status of the previous command
-  if [ $? -gt 0 ]; then
+  if ! docker compose up -d; then
     # Retrieve running container details
     compose_output=$(docker compose ls --format json)
 
     # Extract the name value using `jq` and store in an array
-    running_names=($(echo "$compose_output" | jq -r '.[].Name'))
+    running_names=("${(@f)$(print -r -- "$compose_output" | jq -r '.[].Name')}")
 
     # Prompt the user for a yes or no input
     echo -e "\nCould not start container because the following containers are already running:"
@@ -21,20 +21,18 @@ function d-up() {
     read response
 
     # Convert the response to lowercase for case-insensitive comparison
-    response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+    response="${response:l}"
 
     # Check the user's input and take action accordingly
     if [[ "$response" == "y" || "$response" == "yes" ]]; then
       echo "Stopping the running containers..."
       # Perform desired actions if the response is yes
-      for name in $running_names; do
+      local name
+      for name in "${running_names[@]}"; do
         echo -e "Stopping container: \e[31m$name\e[0m "
-        docker compose -p "$name" down
-
-        # Check the exit status of the previous command
-        if [ $? -ne 0 ]; then
+        if ! docker compose -p "$name" down; then
           echo "Failed to stop container. Exiting..."
-          exit 1
+          return 1
         fi
       done
 
@@ -42,6 +40,7 @@ function d-up() {
       docker compose up -d
     else
       echo "Aborting. Exiting..."
+      return 1
     fi
   fi
 

@@ -1,16 +1,18 @@
 #autoload
 
 function touch-mkdir() {
+    local filepath dirs
+
     # If no arguments are given, print usage.
     if [[ $# -eq 0 ]]; then
-        echo -e "Usage: $0 \e[34m<filepath>...\e[0m"
+        echo -e "Usage: touch-mkdir \e[34m<filepath>...\e[0m"
         return 1
     fi
 
     # Loop over every argument passed to the function/script.
     for filepath in "$@"; do
         # Extract directory from the file path.
-        local dirs="$(dirname "$filepath")"
+        dirs="$(dirname "$filepath")"
 
         echo -e "Creating directories: \e[34m$dirs\e[0m"
         mkdir -p "$dirs"
