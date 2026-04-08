@@ -1,97 +1,164 @@
 #autoload
-# zfuncs autoloaded function: git-clean-branches
 
 function git-clean-branches() {
   emulate -L zsh
-  setopt extendedglob no_nomatch
+  setopt extendedglob pipefail no_nomatch
 
-  echo -e "Cleaning out merged branches... Using \e[34mgit branch \e[31m-d\e[0m"
+  local mode="delete"
+  local requested_target="${1:-}"
+  local exit_code
+  local stashed=0 stash_name="git-clean-branches auto-stash"
 
-  # Must be in a git repo
+  if [[ "$requested_target" == "--dry-run" || "$requested_target" == "-n" ]]; then
+    mode="dry-run"
+    requested_target="${2:-}"
+  fi
+
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Not inside a git repository." >&2
     return 1
   fi
 
-  # Determine default branch from origin/HEAD (main/master/develop/etc)
-  local TMPBR
-  TMPBR="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
-  if [[ -z "$TMPBR" ]]; then
-    echo "Could not determine origin/HEAD. Is 'origin' set and fetched?" >&2
-    return 1
+  if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+    echo "Stashing local changes (including untracked files)..."
+    git stash push --include-untracked -m "$stash_name" >/dev/null || return 1
+    stashed=1
   fi
 
-  # Protect common branches + whatever origin/HEAD points to
-  local PROTECT_RE
-  PROTECT_RE="^(master|main|dev|develop|${TMPBR})$"
+  () {
+    local current_branch default_branch target_ref target_tree branch merge_tree candidate
+    local deleted_count=0 kept_count=0 failed_count=0
+    local delete_mode reason
+    local -a branches protected_names
 
-  # Stash only if there are changes (including untracked)
-  if [[ -n "$(git status --porcelain)" ]]; then
-    echo -e "\nStashing local changes (including untracked)..."
-    git stash push -u -m "git-clean-branches auto-stash"
-  else
-    echo -e "\nNo local changes to stash."
-  fi
+    if git remote get-url origin >/dev/null 2>&1; then
+      echo "Fetching latest refs from origin..."
+      git fetch --prune origin || return 1
+    fi
 
-  echo -e "\nUpdating default branch: \e[32m$TMPBR\e[0m"
-  # Prune first so "remote gone" checks are accurate
-  git fetch --prune origin
-
-  # Checkout default branch safely (create local tracking if missing)
-  if git show-ref --verify --quiet "refs/heads/$TMPBR"; then
-    git checkout "$TMPBR"
-  else
-    git checkout -b "$TMPBR" "origin/$TMPBR"
-  fi
-
-  # Update it without making merges
-  git pull --ff-only --verbose
-
-  echo -e "\n\e[34mDeleting ancestry-merged local branches (safe -d)...\e[0m"
-  local br merged_list
-  merged_list=("${(@f)$(git branch --merged | sed 's/^\* //; s/^[[:space:]]*//')}")
-
-  for br in $merged_list; do
-    [[ -z "$br" ]] && continue
-    [[ "$br" =~ $PROTECT_RE ]] && continue
-
-    echo -e "git branch -d \e[31m$br\e[0m"
-    git branch -d "$br"
-  done
-
-  echo -e "\n\e[34mDeleting remote-gone branches only if patch is already applied (squash/rebase) ...\e[0m"
-  local local_branches
-  local_branches=("${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/)}")
-
-  for br in $local_branches; do
-    [[ -z "$br" ]] && continue
-    [[ "$br" =~ $PROTECT_RE ]] && continue
-
-    # If remote ref doesn't exist anymore...
-    if ! git show-ref --verify --quiet "refs/remotes/origin/$br"; then
-      # ...and the patch is already applied to TMPBR, delete locally.
-      if git cherry -v "$TMPBR" "$br" | grep -q '^- '; then
-        echo -e "Deleting (applied + remote gone): \e[31m$br\e[0m"
-        git branch -D "$br"
+    if [[ -n "$requested_target" ]]; then
+      if git show-ref --verify --quiet "refs/heads/$requested_target"; then
+        target_ref="$requested_target"
+        default_branch="$requested_target"
+      elif git show-ref --verify --quiet "refs/remotes/origin/$requested_target"; then
+        target_ref="origin/$requested_target"
+        default_branch="$requested_target"
       else
-        echo -e "Keeping (remote gone, NOT applied to $TMPBR): \e[33m$br\e[0m"
+        echo "Target branch not found: $requested_target" >&2
+        return 1
+      fi
+    else
+      default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"
+      default_branch="${default_branch#origin/}"
+
+      if [[ -z "$default_branch" ]]; then
+        for candidate in main master develop dev; do
+          if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+            default_branch="$candidate"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$default_branch" ]]; then
+        for candidate in main master develop dev; do
+          if git show-ref --verify --quiet "refs/heads/$candidate"; then
+            default_branch="$candidate"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$default_branch" ]]; then
+        echo "Could not determine the default branch from origin/HEAD." >&2
+        return 1
+      fi
+
+      if git show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+        target_ref="origin/$default_branch"
+      else
+        target_ref="$default_branch"
       fi
     fi
-  done
 
-  echo -e "\n\n\e[34mRemaining git branches:\e[0m"
-  git branch
+    target_tree="$(git rev-parse "${target_ref}^{tree}")" || return 1
+    current_branch="$(git branch --show-current)"
+    branches=("${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/)}")
+    protected_names=(main master develop dev "$default_branch" "$current_branch")
+    protected_names=("${(@u)protected_names}")
 
-  echo -e "\n\n\e[34mFetching updates for local branches that still exist on origin...\e[0m"
-  for br in $local_branches; do
-    [[ -z "$br" ]] && continue
-    [[ "$br" =~ $PROTECT_RE ]] && continue
+    _git_clean_branch_is_protected() {
+      local candidate="$1"
+      local protected
 
-    if git show-ref --verify --quiet "refs/remotes/origin/$br"; then
-      echo -e "git fetch \e[32m$br\e[0m"
-      git fetch origin "$br:$br" --verbose
-    else
-      echo -e "Skipping fetch (no remote ref): \e[33m$br\e[0m"
-    fi
-  done
+      for protected in "${protected_names[@]}"; do
+        [[ -n "$protected" && "$candidate" == "$protected" ]] && return 0
+      done
+      return 1
+    }
+
+    _git_clean_branch_is_fully_applied() {
+      local candidate="$1"
+      local merged_tree
+
+      merged_tree="$(git merge-tree --write-tree "$target_ref" "$candidate" 2>/dev/null)" || return 1
+      merged_tree="${merged_tree%%$'\n'*}"
+      [[ -n "$merged_tree" && "$merged_tree" == "$target_tree" ]]
+    }
+
+    echo -e "Cleaning local branches against \e[32m$target_ref\e[0m (${mode})"
+
+    for branch in "${branches[@]}"; do
+      [[ -z "$branch" ]] && continue
+
+      if _git_clean_branch_is_protected "$branch"; then
+        continue
+      fi
+
+      delete_mode=""
+      reason=""
+
+      if git merge-base --is-ancestor "$branch" "$target_ref" 2>/dev/null; then
+        delete_mode="-d"
+        reason="merged"
+      elif _git_clean_branch_is_fully_applied "$branch"; then
+        delete_mode="-D"
+        reason="already applied"
+      else
+        echo -e "Keeping \e[33m$branch\e[0m"
+        kept_count=$((kept_count + 1))
+        continue
+      fi
+
+      if [[ "$mode" == "dry-run" ]]; then
+        echo -e "Would delete (\e[34m$reason\e[0m): \e[31m$branch\e[0m via git branch $delete_mode"
+        deleted_count=$((deleted_count + 1))
+        continue
+      fi
+
+      echo -e "Deleting (\e[34m$reason\e[0m): \e[31m$branch\e[0m"
+      if git branch "$delete_mode" "$branch"; then
+        deleted_count=$((deleted_count + 1))
+      else
+        failed_count=$((failed_count + 1))
+      fi
+    done
+
+    echo
+    echo "Deleted: $deleted_count"
+    echo "Kept: $kept_count"
+    echo "Failed: $failed_count"
+  }
+  exit_code=$?
+
+  if (( stashed )); then
+    echo
+    echo "Restoring stashed changes..."
+    git stash pop --index >/dev/null 2>&1 || {
+      echo "Could not auto-restore the stash. It is still available in git stash list." >&2
+      return $exit_code
+    }
+  fi
+
+  return $exit_code
 }
