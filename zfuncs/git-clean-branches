@@ -48,8 +48,12 @@ function git-clean-branches() {
         return 1
       fi
     else
-      default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"
-      default_branch="${default_branch#origin/}"
+      if git show-ref --verify --quiet "refs/remotes/origin/develop" || git show-ref --verify --quiet "refs/heads/develop"; then
+        default_branch="develop"
+      else
+        default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"
+        default_branch="${default_branch#origin/}"
+      fi
 
       if [[ -z "$default_branch" ]]; then
         for candidate in main master develop dev; do
@@ -81,8 +85,29 @@ function git-clean-branches() {
       fi
     fi
 
-    target_tree="$(git rev-parse "${target_ref}^{tree}")" || return 1
     current_branch="$(git branch --show-current)"
+
+    if [[ -n "$default_branch" && "$target_ref" == "origin/$default_branch" ]]; then
+      if git show-ref --verify --quiet "refs/heads/$default_branch"; then
+        if [[ "$current_branch" == "$default_branch" ]]; then
+          echo "Pulling latest $default_branch..."
+          git pull --ff-only origin "$default_branch" || return 1
+          target_ref="$default_branch"
+        elif git merge-base --is-ancestor "$default_branch" "origin/$default_branch" 2>/dev/null; then
+          echo "Fast-forwarding local $default_branch..."
+          git branch -f "$default_branch" "origin/$default_branch" >/dev/null || return 1
+          target_ref="$default_branch"
+        else
+          echo "Local $default_branch has commits not on origin/$default_branch; using origin/$default_branch for cleanup." >&2
+        fi
+      else
+        echo "Creating local $default_branch from origin/$default_branch..."
+        git branch --track "$default_branch" "origin/$default_branch" >/dev/null 2>&1 || return 1
+        target_ref="$default_branch"
+      fi
+    fi
+
+    target_tree="$(git rev-parse "${target_ref}^{tree}")" || return 1
     branches=("${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/)}")
     protected_names=(main master develop dev "$default_branch" "$current_branch")
     protected_names=("${(@u)protected_names}")
