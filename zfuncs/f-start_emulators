@@ -2,21 +2,74 @@
 
 function f-start_emulators() {
     emulate -L zsh
-    setopt localtraps
+    setopt localtraps pipefail nomonitor
 
-    local root script firebase_pid firebase_pgid shell_pgid cleanup_done=0
+    local root script firebase_dir functions_dir functions_main_rel functions_main_path
+    local firebase_pid firebase_pgid shell_pgid cleanup_done=0
+    local import_dir export_dir build=0 opt
+    local use_managed_runner=0
+    local -a script_args
+
+    function _f_start_emulators_print_usage() {
+        cat <<'EOF'
+Usage: f-start_emulators [-n] [-b] [-h]
+Starts the Firebase emulators with the specified options.
+Options:
+  -n: Start with new data (import from emulators_data)
+  -b: Build the functions before starting the emulators
+  -h: Print this help message
+EOF
+    }
+
+    while getopts "nbh" opt; do
+        case "$opt" in
+            n)
+                import_dir="emulators_data"
+                ;;
+            b)
+                build=1
+                ;;
+            h)
+                _f_start_emulators_print_usage
+                return 0
+                ;;
+            \?)
+                _f_start_emulators_print_usage >&2
+                return 1
+                ;;
+        esac
+    done
+    shift $((OPTIND - 1))
 
     root="$(_m_find_root)" || {
-        print -ru2 -- "Not inside a melos repo (melos.yaml not found)."
+        print -ru2 -- "Not inside a Melos workspace (no melos.yaml or pubspec workspace config found)."
         return 1
     }
 
     script="$root/bin/start_firebase_emulators.sh"
-    [[ -f "$script" ]] || {
-        print -ru2 -- "Script not found: $script"
-        return 1
-    }
-    [[ -x "$script" ]] || chmod +x "$script" >/dev/null 2>&1 || true
+    firebase_dir="$root/firebase"
+    functions_dir="$firebase_dir/functions"
+    import_dir="${import_dir:-emulators_data_personal}"
+    export_dir="emulators_data_personal"
+
+    if [[ -d "$firebase_dir" && -f "$functions_dir/package.json" ]]; then
+        use_managed_runner=1
+        functions_main_rel="$(
+            cd "$functions_dir" &&
+            node -p "try { require('./package.json').main || 'index.js' } catch (error) { 'index.js' }" 2>/dev/null
+        )"
+        functions_main_rel="${functions_main_rel:-index.js}"
+        functions_main_path="$functions_dir/$functions_main_rel"
+
+        if [[ ! -d "$firebase_dir/$export_dir" && "$import_dir" == "$export_dir" ]]; then
+            import_dir="emulators_data"
+        fi
+    else
+        [[ -f "$script" ]] || {
+            print -ru2 -- "Script not found: $script"
+            return 1
+        }
+    fi
 
     trap '
         if (( ! cleanup_done )); then
@@ -47,11 +100,34 @@ function f-start_emulators() {
     print -P -- "Reauth %F{green}firebase%f"
     firebase login --reauth || return $?
 
-    print -P -- "Running %F{green}./bin/start_firebase_emulators.sh%f"
-    (
-        cd "$root" || exit 1
-        "$script" "$@"
-    ) &
+    if (( use_managed_runner )); then
+        if (( build )) || [[ ! -f "$functions_main_path" ]]; then
+            print -P -- "Compiling %F{green}firebase functions%f"
+            (
+                cd "$functions_dir" || exit 1
+                if [[ ! -d node_modules ]]; then
+                    npm i || exit $?
+                fi
+                npm exec tsc -- -p tsconfig.json
+            ) || return $?
+        fi
+
+        print -P -- "Running %F{green}firebase emulators:start%f"
+        (
+            cd "$firebase_dir" || exit 1
+            firebase emulators:start --import "./$import_dir" --export-on-exit="./$export_dir"
+        ) &
+    else
+        print -P -- "Running %F{green}./bin/start_firebase_emulators.sh%f"
+        script_args=()
+        (( build )) && script_args+=(-b)
+        [[ "$import_dir" == "emulators_data" ]] && script_args+=(-n)
+        (
+            cd "$root" || exit 1
+            /bin/bash "$script" "${script_args[@]}"
+        ) &
+    fi
+
     firebase_pid=$!
     firebase_pgid="$(ps -o pgid= -p "$firebase_pid" 2>/dev/null)"
     firebase_pgid="${firebase_pgid//[[:space:]]/}"

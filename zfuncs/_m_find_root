@@ -1,13 +1,26 @@
 #autoload
 
 function _m_find_root() {
-    # Find repo root by walking up until we see melos.yaml
+    emulate -L zsh
+
+    # Find repo root by walking up until we see either:
+    # - a legacy melos.yaml, or
+    # - a pubspec.yaml that declares a workspace or melos config.
     local dir="$PWD"
+    local pubspec
+
     while [[ "$dir" != "/" ]]; do
       if [[ -f "$dir/melos.yaml" ]]; then
         print -r -- "$dir"
         return 0
       fi
+
+      pubspec="$dir/pubspec.yaml"
+      if [[ -f "$pubspec" ]] && grep -Eq '^(workspace|melos):' "$pubspec"; then
+        print -r -- "$dir"
+        return 0
+      fi
+
       dir="${dir:h}"
     done
     return 1

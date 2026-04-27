@@ -4,7 +4,10 @@ function _m_run_repo_script() {
     local rel="$1"
     shift || true
 
-    local root="$(_m_find_root)" || { print -ru2 -- "Not inside a melos repo (melos.yaml not found)."; return 1; }
+    local root="$(_m_find_root)" || {
+        print -ru2 -- "Not inside a Melos workspace (no melos.yaml or pubspec workspace config found)."
+        return 1
+    }
 
     local script="$root/$rel"
     [[ -f "$script" ]] || { print -ru2 -- "Script not found: $script"; return 1; }
