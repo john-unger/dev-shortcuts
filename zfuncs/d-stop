@@ -1,7 +1,10 @@
-#!/usr/bin/env bash
+#autoload
 
 function d-stop() {
-  docker compose stop $1
+  if [[ $# -eq 0 ]]; then
+    docker compose stop
+  else
+    docker compose stop "$1"
+  fi
 }
-
 

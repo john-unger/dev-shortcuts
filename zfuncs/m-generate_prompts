@@ -1,0 +1,4 @@
+#autoload
+
+print -P -- "Running %F{green}./bin/generate_prompts.bash%f"
+_m_run_repo_script "bin/generate_prompts.bash" "$@"

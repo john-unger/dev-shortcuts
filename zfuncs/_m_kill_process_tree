@@ -1,0 +1,32 @@
+#autoload
+
+function _m_kill_process_tree() {
+    emulate -L zsh
+
+    local root_pid="${1:-}"
+    local signal="${2:-TERM}"
+    local pid child idx
+    local -a pids queue children
+
+    [[ "$root_pid" == <-> ]] || return 1
+
+    pids=("$root_pid")
+    queue=("$root_pid")
+
+    while (( ${#queue[@]} )); do
+        pid="${queue[1]}"
+        queue=("${queue[@]:1}")
+        children=("${(@f)$(command ps -ax -o pid=,ppid= 2>/dev/null | awk -v parent="$pid" '$2 == parent { print $1 }')}")
+
+        for child in "${children[@]}"; do
+            [[ "$child" == <-> ]] || continue
+            pids+=("$child")
+            queue+=("$child")
+        done
+    done
+
+    pids=("${(@u)pids}")
+    for (( idx = ${#pids[@]}; idx >= 1; idx-- )); do
+        kill "-$signal" "${pids[idx]}" 2>/dev/null || true
+    done
+}

@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function git-tag-current() {
     function print_instructions() {

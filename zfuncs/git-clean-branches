@@ -1,17 +1,189 @@
-#!/usr/bin/env bash
+#autoload
 
 function git-clean-branches() {
-	echo -e "Cleaning out merged branches... Using \e[34mgit branch \e[31m-d\e[0m"
-	TMPBR=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')
-	git stash && git checkout $TMPBR && git pull --verbose
+  emulate -L zsh
+  setopt extendedglob pipefail no_nomatch
 
-	git branch --merged | egrep -v "(^\*|master|main|dev)" | xargs git branch -d
-	echo -e "\n\n\e[34mRemaining git branches:\e[0m"
-	git branch
-	echo -e "\n\n\e[34mPulling all local branches...\e[0m"
-	for brname in `git for-each-ref --format='%(refname:short)' refs/heads/ | egrep -v "(^\*|master|main|dev)"`
-	do
-		echo -e "git fetch \e[32m$brname\e[0m"
-    	git fetch origin $brname:$brname --verbose
-	done
+  local mode="delete"
+  local requested_target="${1:-}"
+  local exit_code
+  local stashed=0 stash_name="git-clean-branches auto-stash"
+
+  if [[ "$requested_target" == "--dry-run" || "$requested_target" == "-n" ]]; then
+    mode="dry-run"
+    requested_target="${2:-}"
+  fi
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Not inside a git repository." >&2
+    return 1
+  fi
+
+  if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+    echo "Stashing local changes (including untracked files)..."
+    git stash push --include-untracked -m "$stash_name" >/dev/null || return 1
+    stashed=1
+  fi
+
+  () {
+    local current_branch default_branch target_ref target_tree branch merge_tree candidate
+    local deleted_count=0 kept_count=0 failed_count=0
+    local delete_mode reason
+    local -a branches protected_names
+
+    if git remote get-url origin >/dev/null 2>&1; then
+      echo "Fetching latest refs from origin..."
+      git fetch --prune origin || return 1
+    fi
+
+    if [[ -n "$requested_target" ]]; then
+      if git show-ref --verify --quiet "refs/heads/$requested_target"; then
+        target_ref="$requested_target"
+        default_branch="$requested_target"
+      elif git show-ref --verify --quiet "refs/remotes/origin/$requested_target"; then
+        target_ref="origin/$requested_target"
+        default_branch="$requested_target"
+      else
+        echo "Target branch not found: $requested_target" >&2
+        return 1
+      fi
+    else
+      if git show-ref --verify --quiet "refs/remotes/origin/develop" || git show-ref --verify --quiet "refs/heads/develop"; then
+        default_branch="develop"
+      else
+        default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)"
+        default_branch="${default_branch#origin/}"
+      fi
+
+      if [[ -z "$default_branch" ]]; then
+        for candidate in main master develop dev; do
+          if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+            default_branch="$candidate"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$default_branch" ]]; then
+        for candidate in main master develop dev; do
+          if git show-ref --verify --quiet "refs/heads/$candidate"; then
+            default_branch="$candidate"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$default_branch" ]]; then
+        echo "Could not determine the default branch from origin/HEAD." >&2
+        return 1
+      fi
+
+      if git show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+        target_ref="origin/$default_branch"
+      else
+        target_ref="$default_branch"
+      fi
+    fi
+
+    current_branch="$(git branch --show-current)"
+
+    if [[ -n "$default_branch" && "$target_ref" == "origin/$default_branch" ]]; then
+      if git show-ref --verify --quiet "refs/heads/$default_branch"; then
+        if [[ "$current_branch" == "$default_branch" ]]; then
+          echo "Pulling latest $default_branch..."
+          git pull --ff-only origin "$default_branch" || return 1
+          target_ref="$default_branch"
+        elif git merge-base --is-ancestor "$default_branch" "origin/$default_branch" 2>/dev/null; then
+          echo "Fast-forwarding local $default_branch..."
+          git branch -f "$default_branch" "origin/$default_branch" >/dev/null || return 1
+          target_ref="$default_branch"
+        else
+          echo "Local $default_branch has commits not on origin/$default_branch; using origin/$default_branch for cleanup." >&2
+        fi
+      else
+        echo "Creating local $default_branch from origin/$default_branch..."
+        git branch --track "$default_branch" "origin/$default_branch" >/dev/null 2>&1 || return 1
+        target_ref="$default_branch"
+      fi
+    fi
+
+    target_tree="$(git rev-parse "${target_ref}^{tree}")" || return 1
+    branches=("${(@f)$(git for-each-ref --format='%(refname:short)' refs/heads/)}")
+    protected_names=(main master develop dev "$default_branch" "$current_branch")
+    protected_names=("${(@u)protected_names}")
+
+    _git_clean_branch_is_protected() {
+      local candidate="$1"
+      local protected
+
+      for protected in "${protected_names[@]}"; do
+        [[ -n "$protected" && "$candidate" == "$protected" ]] && return 0
+      done
+      return 1
+    }
+
+    _git_clean_branch_is_fully_applied() {
+      local candidate="$1"
+      local merged_tree
+
+      merged_tree="$(git merge-tree --write-tree "$target_ref" "$candidate" 2>/dev/null)" || return 1
+      merged_tree="${merged_tree%%$'\n'*}"
+      [[ -n "$merged_tree" && "$merged_tree" == "$target_tree" ]]
+    }
+
+    echo -e "Cleaning local branches against \e[32m$target_ref\e[0m (${mode})"
+
+    for branch in "${branches[@]}"; do
+      [[ -z "$branch" ]] && continue
+
+      if _git_clean_branch_is_protected "$branch"; then
+        continue
+      fi
+
+      delete_mode=""
+      reason=""
+
+      if git merge-base --is-ancestor "$branch" "$target_ref" 2>/dev/null; then
+        delete_mode="-d"
+        reason="merged"
+      elif _git_clean_branch_is_fully_applied "$branch"; then
+        delete_mode="-D"
+        reason="already applied"
+      else
+        echo -e "Keeping \e[33m$branch\e[0m"
+        kept_count=$((kept_count + 1))
+        continue
+      fi
+
+      if [[ "$mode" == "dry-run" ]]; then
+        echo -e "Would delete (\e[34m$reason\e[0m): \e[31m$branch\e[0m via git branch $delete_mode"
+        deleted_count=$((deleted_count + 1))
+        continue
+      fi
+
+      echo -e "Deleting (\e[34m$reason\e[0m): \e[31m$branch\e[0m"
+      if git branch "$delete_mode" "$branch"; then
+        deleted_count=$((deleted_count + 1))
+      else
+        failed_count=$((failed_count + 1))
+      fi
+    done
+
+    echo
+    echo "Deleted: $deleted_count"
+    echo "Kept: $kept_count"
+    echo "Failed: $failed_count"
+  }
+  exit_code=$?
+
+  if (( stashed )); then
+    echo
+    echo "Restoring stashed changes..."
+    git stash pop --index >/dev/null 2>&1 || {
+      echo "Could not auto-restore the stash. It is still available in git stash list." >&2
+      return $exit_code
+    }
+  fi
+
+  return $exit_code
 }

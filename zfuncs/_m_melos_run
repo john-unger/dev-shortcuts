@@ -1,0 +1,7 @@
+#autoload
+
+function _m_melos_run() {
+    local script_name="$1"
+    shift || true
+    _m_melos run "$script_name" -- "$@"
+}

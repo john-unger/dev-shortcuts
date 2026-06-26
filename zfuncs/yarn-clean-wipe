@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#autoload
 
 function yarn-clean-wipe() {
 

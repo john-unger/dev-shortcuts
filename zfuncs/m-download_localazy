@@ -1,0 +1,4 @@
+#autoload
+
+print -P -- "Running %F{blue}melos%F{green} run download_localazy%f"
+_m_melos_run download_localazy "$@"

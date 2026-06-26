@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function d-destroy() {
   docker compose down -v
