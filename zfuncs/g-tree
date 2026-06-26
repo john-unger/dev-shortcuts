@@ -3,13 +3,63 @@
 # Describes the entire dependency tree for the core module. This can be done for any project module.
 
 function g-tree() {
-    local module="${1:-}"
+    local module=""
+    local dep_name=""
+    local gradle_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--dependency)
+                shift
+                if [[ -z "${1:-}" ]]; then
+                    echo "Usage: g-tree <module> [dependency] [-- gradle-args...]" >&2
+                    echo "       g-tree --dependency <dependency> [module] [-- gradle-args...]" >&2
+                    return 1
+                fi
+                dep_name="$1"
+                ;;
+            --)
+                shift
+                gradle_args+=("$@")
+                break
+                ;;
+            -*)
+                gradle_args+=("$1")
+                if [[ -n "${2:-}" && "$2" != -* ]]; then
+                    shift
+                    gradle_args+=("$1")
+                fi
+                ;;
+            *)
+                if [[ -z "$module" ]]; then
+                    module="${1#:}"
+                    module="${module%:}"
+                elif [[ -z "$dep_name" ]]; then
+                    dep_name="$1"
+                else
+                    gradle_args+=("$1")
+                fi
+                ;;
+        esac
+
+        shift
+    done
 
     if [[ -z "$module" ]]; then
-        echo "Usage: g-tree <module>" >&2
-        return 1
+        if [[ -n "$dep_name" ]]; then
+            module="core"
+        else
+            echo "Usage: g-tree <module> [dependency] [-- gradle-args...]" >&2
+            echo "       g-tree --dependency <dependency> [module] [-- gradle-args...]" >&2
+            return 1
+        fi
     fi
 
-    echo -e "Running \e[34m./gradlew \e[32m:$module:dependencies\e[0m"
-    ./gradlew ":$module:dependencies"
+    if [[ -n "$dep_name" ]]; then
+        echo -e "Running \e[34m./gradlew \e[32m:${module}:dependencyInsight --dependency $dep_name ${gradle_args[*]}\e[0m"
+        ./gradlew ":${module}:dependencyInsight" --dependency "$dep_name" "${gradle_args[@]}"
+    else
+        echo -e "Running \e[34m./gradlew \e[32m:${module}:dependencies ${gradle_args[*]}\e[0m"
+        ./gradlew ":${module}:dependencies" "${gradle_args[@]}"
+    fi
 }
