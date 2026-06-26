@@ -1,0 +1,240 @@
+#autoload
+
+function ops-copy-down() {
+      # Get the tenant passed as the first argument
+      local tenant="$1"
+
+      # Check if the user provided a tenant
+      if [[ -z "$tenant" ]]; then
+            echo "Usage: ops-copy-down <tenant>"
+            echo "Example: ops-copy-down qa  or  ops-copy-down funds-qa"
+            return 1
+      fi
+
+      # Convert tenant to lowercase (for tenantLower)
+      local tenantLower
+      tenantLower="${tenant}-uat"
+
+      # Get today's date in YYYYMMDD format
+      local todaysdate
+      todaysdate="$(date +%Y%m%d)"
+
+      # Print a nice header message
+      echo -e "\n\e[34m==[ ops-copy-down for tenant: $tenant ]==\e[0m"
+      echo -e "tenantLower: \e[32m${tenantLower}\e[0m"
+      echo -e "todaysdate:  \e[32m${todaysdate}\e[0m\n"
+
+      # Render out the steps (using a here-document for readability)
+      cat <<EOF
+Steps to CopyDown (easy to copy & paste):
+
+1) To get secret:
+   kubectl -n percona get secrets percona-cluster-secrets -o jsonpath="{.data.root}" | base64 --decode
+
+2) To start shell in the pod:
+   kubectl -n percona exec -it -c pxc pod/percona-pxc-0 -- /bin/bash
+
+3) To build datadump (mysqldump):
+   mysqldump -u root -p -v --hex-blob --single-transaction --skip-lock-tables --quick ${tenant} \\
+   | gzip -c > /tmp/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz
+
+4) To copy dump to local:
+   kubectl -n percona -c pxc cp --retries=-1 \\
+   percona-pxc-0:/tmp/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz \\
+   ~/Desktop/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz
+
+5) To copy dump to lower environment (tenantLower):
+   kubectl -n percona -c pxc cp --retries=-1 \\
+   ~/Desktop/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz \\
+   percona-pxc-0:/tmp/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz
+
+6) To override DB in lower (tenantLower):
+   pv /tmp/sandbox-tl-production_${tenant}_${todaysdate}.sql.gz \\
+   | gzip -dc \\
+   | mysql -u root -p\$(cat /etc/mysql/mysql-users-secret/root) -D ${tenantLower}
+
+7) After that, you can port-forward and perform bulk actions, etc.
+Java Helper
+
+
+
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import brightspot.qa.spotcheck.SpotCheckAnalysisJobRunner;
+import brightspot.task.DefaultTaskHostSetting;
+import com.psddev.cms.db.Site;
+import com.psddev.cms.tool.CmsTool;
+import com.psddev.dari.db.Query;
+import com.psddev.dari.db.Record;
+import com.psddev.dari.db.Singleton;
+
+class Scratch {
+    public static Object main() throws Throwable {
+        List<String> returnList = new ArrayList<>();
+        returnList.add(String.valueOf(new Date()));
+        String taskHostName = "brightspot-task.cter-qa2.svc.cluster.local";
+        String environment = "QA";
+        String newUrlBase = "https://cter-qa2.lower.k1.amazon.brightspot.cloud";
+
+        CmsTool global = Singleton.getInstance(CmsTool.class);
+        if (global != null) {
+            DefaultTaskHostSetting taskSetting = global.as(DefaultTaskHostSetting.class);
+            taskSetting.setDefaultTaskHost(taskHostName);
+            returnList.add("updated default task host: " + taskHostName);
+
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.translation.aws.AwsTranslationGlobalSettings", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.analytics.PageViewsCmsToolModification", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.adobe.analytics.AdobeAnalyticsProcessTaskSettings", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.google.GoogleCmsToolModification", "setTaskHost"));
+            returnList.add(changeTaskHostIfClassExists(global, taskHostName, "com.psddev.calendar.external.ExternalCalendarSyncTaskGlobalSettings", "setTaskHost"));
+
+            global.setEnvironment(environment);
+            global.saveImmediately();
+
+            SpotCheckAnalysisJobRunner spotCheck = SpotCheckAnalysisJobRunner.getInstance();
+            if (spotCheck != null) {
+                spotCheck.setTaskHostOverride(taskHostName);
+                spotCheck.saveImmediately();
+                returnList.add("updated taskHost for SpotCheckAnalysisJobRunner: " + taskHostName);
+            } else {
+                returnList.add("SpotCheckAnalysisJobRunner not found");
+            }
+        } else {
+            returnList.add("CmsTool not found");
+            return returnList;
+        }
+
+        returnList.add("updating site urls...");
+        // Update the Site URLs
+        for (Site site : Query.from(Site.class)
+                .noCache()
+                .iterable(50)) {
+            changeSiteUrls(site, newUrlBase);
+            try {
+                site.saveImmediately();
+            } catch (Exception e) {
+                returnList.add(String.format("Failed to save site %s: %s", site.getName(), e.getMessage()));
+            }
+        }
+
+        returnList.add("Now perform copy action!!");
+
+        return returnList;
+    }
+
+    public static boolean classExists(String className) {
+        try {
+            Class.forName(className);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    public static String changeTaskHostIfClassExists(Record siteSetting, String taskHostName, String className, String setterMethodName) {
+        if (siteSetting == null) {
+            return "SiteSetting is null";
+        }
+        if (classExists(className)) {
+            try {
+                Object settings = siteSetting.as(Class.forName(className));
+                settings.getClass().getMethod(setterMethodName, String.class).invoke(settings, taskHostName);
+                return "Updated task host for " + className + ": " + taskHostName;
+            } catch (Exception e) {
+                return "Failed to update task host for " + className + ": " + e.getMessage();
+            }
+        } else {
+            return className + " not found";
+        }
+    }
+
+    /**
+     * This method updates the site URL by replacing the main part of the host.
+     * <p>
+     * For example:
+     * from: "https://cter.production.k1.amazon.brightspot.cloud"
+     * to:   "https://cter-qa2.lower.k1.amazon.brightspot.cloud"
+     * <p>
+     * or when there is an extra subdomain:
+     * from: "https://de.cter.production.k1.amazon.brightspot.cloud"
+     * to:   "https://de.cter-qa2.lower.k1.amazon.brightspot.cloud"
+     * <p>
+     * The newBase parameter is a full URL (e.g., "https://cter-qa2.lower.k1.amazon.brightspot.cloud")
+     * whose host part is used as the replacement for the main domain. Any extra subdomains
+     * present in the original URL (e.g., "de") are preserved as a prefix.
+     */
+    private static String getUpdatedSiteUrl(String originalUrl, String newBaseUrl)
+            throws MalformedURLException, URISyntaxException {
+        URL original = new URL(originalUrl);
+        URL newBase = new URL(newBaseUrl);
+        String originalHost = original.getHost(); // e.g., "de.cter.production.k1.amazon.brightspot.cloud"
+        String newBaseHost = newBase.getHost();     // e.g., "cter-qa2.lower.k1.amazon.brightspot.cloud"
+
+        // Split both hosts into their parts
+        String[] originalParts = originalHost.split("\\\\.");
+        String[] newBaseParts = newBaseHost.split("\\\\.");
+
+        // Ensure the original host has at least as many parts as the new base host.
+        // The extra parts at the beginning (if any) are preserved.
+        if (originalParts.length < newBaseParts.length) {
+            throw new IllegalArgumentException("Original host does not contain enough parts to be updated with newBase.");
+        }
+
+        // Calculate the prefix parts (the extra subdomains in the original that are not in newBase)
+        int prefixCount = originalParts.length - newBaseParts.length;
+        StringBuilder prefixBuilder = new StringBuilder();
+        for (int i = 0; i < prefixCount; i++) {
+            if (i > 0) {
+                prefixBuilder.append(".");
+            }
+            prefixBuilder.append(originalParts[i]);
+        }
+        String prefix = prefixBuilder.toString();
+
+        // Combine the preserved prefix (if any) with the new base host.
+        String newHost = prefix.isEmpty() ? newBaseHost : prefix + "." + newBaseHost;
+
+        // Reconstruct the URL with the updated host while preserving protocol, port, path, query, and fragment.
+        URI newUri = new URI(
+                original.getProtocol(),
+                original.getUserInfo(),
+                newHost,
+                original.getPort(),
+                original.getPath(),
+                original.getQuery(),
+                original.getRef()
+        );
+
+        return newUri.toString();
+    }
+
+    private static void changeSiteUrls(Site originalSite, String newBase) {
+        List<String> originalUrls = originalSite.getUrls();
+        List<String> newUrls = new ArrayList<>();
+        for (String originalUrl : originalUrls) {
+            String updatedUrl;
+            try {
+                updatedUrl = getUpdatedSiteUrl(originalUrl, newBase);
+            } catch (Exception e) {
+                updatedUrl = null;
+            }
+            newUrls.add(updatedUrl);
+        }
+        originalSite.setUrls(newUrls);
+    }
+}
+
+
+
+
+
+
+
+EOF
+}

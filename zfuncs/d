@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#autoload
 
 function d() {
   docker-compose up

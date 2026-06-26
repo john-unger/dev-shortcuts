@@ -1,0 +1,16 @@
+#autoload
+
+function g-test-checkstyleMain() {
+    local module="${1:-}"
+    local task="checkstyleMain"
+
+    if [[ -n "$module" && "$module" != -* ]]; then
+        shift
+        module="${module#:}"
+        module="${module%:}"
+        task=":${module}:checkstyleMain"
+    fi
+
+    echo -e "Running \e[34m./gradlew \e[32m$task\e[0m"
+    ./gradlew "$task" "$@"
+}

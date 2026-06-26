@@ -1,0 +1,23 @@
+#autoload
+
+function yarn-clean-wipe() {
+
+	if [ -e "yarn.lock" ]; then
+    	echo "Deleting yarn built files..."
+    	rm yarn.lock
+    	rm -rf node_modules
+    	yarn cache clean
+
+    	echo "Generating yarn files..."
+    	yarn install
+    	yarn
+    	yarn format
+    	yarn build
+
+    	echo
+    	echo "yarn wipe is complete!"
+	else
+    	echo -e "\"\e[32myarn.lock\e[0m\" does \"\e[32mnot exist\e[0m\"\nnothing is done..."
+	fi
+
+}

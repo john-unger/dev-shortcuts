@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#autoload
 
-function g-quick() {
-    echo -e "Running \e[34m./gradlew \e[32m-x checkstyleMain -x checkstyleTest -x test \e[35m--offline -s\e[0m"
-    ./gradlew -x checkstyleMain -x checkstyleTest -x test --offline -s
+function g-quick () {
+    echo -e "Running \e[34m./gradlew \e[32m--parallel -x checkstyleMain -x checkstyleTest -x test \e[35m--offline -s\e[0m"
+    ./gradlew --parallel -x checkstyleMain -x checkstyleTest -x test --offline -s
 }

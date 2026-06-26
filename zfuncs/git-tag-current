@@ -1,11 +1,57 @@
-#!/usr/bin/env zsh
+#autoload
 
 function git-tag-current() {
-	# Get today's date in the desired format (e.g., vYYYY.MM.DD)
-	tag_name="v$(date +'%Y.%m.%d')"
+    function print_instructions() {
+        local t="$1"
+        echo "Run these commands manually:"
+        echo "  git tag -a \"$t\" -m \"\""
+        echo "  git push origin \"$t\""
+    }
+    # Optional suffix argument.
+    # If provided, we skip trying the normal tag and go straight to using the suffix.
+    local suffix="$1"
+    local tag_name="v$(date +'%Y.%m.%d')"
 
-	echo -e "Creating tag... Using \"\e[34m$tag_name\e[0m\""
-	git tag -a "$tag_name" -m ""
-	echo -e "Pushing tag..."
-	git push origin "$tag_name"
+    if [[ -n "$suffix" ]]; then
+        # Suffix provided: attempt to create the tag with the suffix directly.
+        tag_name="${tag_name}.${suffix}"
+        echo "Creating tag with suffix: \"${tag_name}\""
+        if ! git tag -a "$tag_name" -m ""; then
+            echo "Failed to create tag '${tag_name}'."
+            print_instructions "$tag_name"
+            return 1
+        fi
+    else
+        # No suffix provided: attempt to create the normal tag first.
+        echo "Creating tag... Using \"${tag_name}\""
+        if ! git tag -a "$tag_name" -m "" 2>/dev/null; then
+            echo "Error creating tag '${tag_name}'."
+            printf "Do you want to append \".2\"? (y/n): "
+            read response
+            response=$(echo "$response" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$response" == "y" || "$response" == "yes" ]]; then
+                tag_name="${tag_name}.2"
+                echo "Creating tag with suffix: \"${tag_name}\""
+                if ! git tag -a "$tag_name" -m ""; then
+                    echo "Failed to create '${tag_name}' even after appending \".2\"."
+                    print_instructions "$tag_name"
+                    return 1
+                fi
+            else
+                # User declined to add the suffix
+                print_instructions "$tag_name"
+                return 1
+            fi
+        fi
+    fi
+
+    echo "Pushing tag '${tag_name}'..."
+    if ! git push origin "$tag_name"; then
+        echo "Failed to push tag '${tag_name}'."
+        print_instructions "$tag_name"
+        return 1
+    fi
+
+    echo "Tag '${tag_name}' created and pushed successfully."
 }
